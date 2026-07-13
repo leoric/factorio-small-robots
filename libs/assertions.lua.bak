@@ -1,0 +1,254 @@
+log("Entered file " .. debug.getinfo(1).source)
+
+local assert = {}
+  ------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------
+--                                LOCAL DEFINITIONS                               --
+------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------
+
+--~ -- Load debugging functions
+--~ for key, value in pairs(require("__autodrive__.libs.debugging")) do
+  -- assert[key] = table.deepcopy(value)
+  --~ assert[key] = value
+  --~ log(string.format("Added \"%s\": %s",
+                    --~ key, type(value) == "function" and "function" or serpent.block(value)))
+--~ end
+
+
+
+-- Using next() with custom tables will return garbage, so we must make sure that
+-- it really contains no elements when checking if it's empty!
+assert.is_custom_table_empty = function(tab)
+  common.entered_function({tab})
+  local ret = true
+
+  -- If there is at least one element, the table is not empty!
+  for e, element in pairs(tab) do
+    ret = false
+    break
+  end
+  --~ common.writeDebug("Table %s empty!", {ret and "is" or "isn't"})
+  return ret
+end
+
+
+
+------------------------------------------------------------------------------------
+-- Get the player entity from index, name or entity
+assert.ascertain_player = function(player)
+  common.entered_function({player})
+
+  local ret
+  local p = type(player)
+  if p == "table" then
+    ret = (player.object_name == "LuaPlayer") and player
+  elseif (p == "number" or p == "string") then
+    ret = game.players[player]
+  end
+
+  return ret
+end
+
+------------------------------------------------------------------------------------
+-- Get the force from index, name or entity
+assert.ascertain_force = function(force)
+  common.entered_function({force})
+
+  local ret
+  local f = type(force)
+  if f == "table" then
+    ret = (force.object_name == "LuaForce") and force
+  elseif (f == "number" or f == "string") then
+    ret = game.forces[force]
+  end
+
+  return ret
+end
+
+------------------------------------------------------------------------------------
+-- Get the surface from index, name or entity
+assert.ascertain_surface = function(surface)
+  common.entered_function({surface})
+
+  local ret
+  local s = type(surface)
+  if s == "table" then
+    ret = (surface.object_name == "LuaSurface") and surface
+  elseif (s == "number" or s == "string") then
+    ret = game.surfaces[surface]
+  end
+
+  return ret
+end
+
+
+
+------------------------------------------------------------------------------------
+-- Throw an error if a wrong argument has been passed to a function
+assert.arg_err = function(arg, arg_type)
+  error(string.format(
+    "Wrong argument! %s is not %s!",
+    (arg or "nil"), (arg_type and "a valid " .. arg_type or "valid")
+  ))
+end
+
+------------------------------------------------------------------------------------
+-- Rudimentary check of the arguments passed to a function
+assert.check_args = function(arg, arg_type)
+
+  local ret = true
+  arg_type = arg_type and arg_type:lower() or ""
+
+  -- Special arguments: Entities, recipes etc. are stored in tables, but that's not
+  -- enough to make sure they really are such a thing
+  if type(arg) == "table" then
+    local object_type = (arg.object_name and arg.object_name:lower()) or
+                        (arg.type and arg.type:lower())
+    if arg_type ~= object_type and arg_type ~= "table" then
+      ret = false
+    end
+
+  -- Default argument, it should match the string returned by the type() function!
+  elseif type(arg) ~= arg_type then
+    ret = false
+  end
+
+  return ret
+end
+
+------------------------------------------------------------------------------------
+-- Error when argument is not of expected type.
+-- arg:      The value we want to check
+-- arg_type: String or array of strings specifying the expected type(s)
+-- desc:     String (optional) with a description for arg_type. Will be ignored if
+--           arg_type is a table!
+--
+-- If only one type is acceptable for arg, arg_type and, optionally, desc must be
+-- strings:
+--      debugging.assert(arg, arg_type, desc)
+--
+-- If arg may be any of several types (e.g. number and nil), call this function
+-- with an array of strings specifying the names of acceptable arg_types, and
+-- optionally a description:
+--      debugging.assert(arg, {type_1, type_2, …}, desc)
+------------------------------------------------------------------------------------
+assert.assert = function(arg, arg_type, desc)
+
+  local arg_types
+  if not arg_type then
+    arg_types = {"nil"}
+  elseif type(arg_type) == "string" then
+    arg_types = {arg_type}
+  elseif type(arg_type) == "table" then
+    for k, v in pairs(arg_type) do
+      if type(v) ~= "string" then
+        assert.arg_err(v, "argument type (string)")
+      end
+    end
+    arg_types = arg_type
+  else
+    assert.arg_err(arg_type, "type (nil, string, or array of strings)")
+  end
+
+  local success
+
+  for a, arg_type in pairs(arg_types) do
+    if assert.check_args(arg, arg_type) then
+      success = true
+      break
+    end
+  end
+
+  if not success then
+    assert.arg_err(arg, desc)
+  end
+  return true
+end
+
+
+------------------------------------------------------------------------------------
+-- Normalize position
+assert.normalize_position = function(position)
+  common.entered_function({position})
+  local x, y
+
+  if type(position) == "table" and table_size(position) == 2 then
+    x = position.x or position[1]
+    y = position.y or position[2]
+  end
+
+  assert.assert(x, "number", "x-coordinate")
+  assert.assert(y, "number", "y-coordinate")
+
+  return {x = x, y = y}
+end
+
+
+------------------------------------------------------------------------------------
+-- Compare positions
+assert.is_same_position = function(pos_a, pos_b)
+  common.entered_function({position})
+
+  pos_a = assert.normalize_position(pos_a)
+  pos_b = assert.normalize_position(pos_b)
+
+  return (pos_a.x == pos_b.x) and (pos_a.y == pos_b.y)
+end
+
+
+------------------------------------------------------------------------------------
+-- Greatly improved version check for mods (thanks to eradicator!)
+assert.Version = {}
+do
+  local V = assert.Version
+
+  local function parse_version(vstr) -- string "Major.Minor.Patch"
+    local err = function()
+      error('Invalid Version String: <'..vstr..'>')
+    end
+
+    local r = {vstr:match'^(%d+)%.(%d+)%.(%d+)$'}
+
+    if #r ~= 3 then
+      err()
+    end
+
+    for i=1, 3 do
+      r[i] = tonumber(r[i])
+    end
+
+    return r
+  end
+
+  V.gtr = function(verA, verB)
+    local a, b, c = unpack(parse_version(verA))
+    local x, y, z = unpack(parse_version(verB))
+    return (a > x) or (a == x and b > y) or (a == x and b == y and c > z)
+  end
+
+  local map = {
+    ['=' ] = function(A, B) return not (V.gtr(A, B)   or V.gtr(B, A)) end,
+    ['>' ] = V.gtr,
+    ['!='] = function(A, B) return (V.gtr(A, B)       or V.gtr(B, A)) end,
+    ['<='] = function(A, B) return V.gtr(B, A)        or (not V.gtr(A, B)) end,
+    ['>='] = function(A, B) return V.gtr(A, B)        or (not V.gtr(B, A)) end,
+    ['~='] = function(A, B) return (V.gtr(A, B)       or V.gtr(B, A)) end,
+    ['<' ] = function(A, B) return V.gtr(B, A) end,
+  }
+
+  assert.check_version = function(mod_name, operator, need_version)
+AD.entered_function({mod_name, operator, need_version})
+    local mod_version = script and script.active_mods[mod_name] or
+                         mods and mods[mod_name]
+AD.show("mod_version", mod_version)
+AD.show("need_version", need_version)
+    return map[operator](mod_version, need_version)
+  end
+end
+
+
+
+------------------------------------------------------------------------------------
+log("Leaving file " .. debug.getinfo(1).source)
+return assert
